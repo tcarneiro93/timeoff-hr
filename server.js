@@ -81,7 +81,7 @@ function writeDB(data) {
 }
 
 // ── Email ────────────────────────────────────────────────────────────────────
-let resend = null;
+let resend = null; // initialized lazily when API key is available
 
 function fmtDate(str) {
   const d = new Date(str + 'T00:00:00');
@@ -94,6 +94,7 @@ async function sendEmail({ to, subject, html }) {
     console.log(`[Email skipped — RESEND_API_KEY not set]\nTo: ${to}\nSubject: ${subject}`);
     return;
   }
+  if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
   const recipient = process.env.TEST_EMAIL_TO || to;
   const finalSubject = (process.env.TEST_EMAIL_TO ? '[TEST] ' : '') + subject;
   try {
@@ -103,7 +104,7 @@ async function sendEmail({ to, subject, html }) {
       subject: finalSubject,
       html
     });
-    if (error) { console.error('[Email error]', error); return; }
+    if (error) { console.error('[Email error]', JSON.stringify(error)); return; }
     console.log(`[Email sent] ${finalSubject} → ${recipient}`);
   } catch (err) { console.error('[Email error]', err.message); }
 }
@@ -292,13 +293,9 @@ app.post('/api/requests', requireAuth, async (req, res) => {
   db.requests.push(newReq);
   writeDB(db);
 
-  // Email manager
+  // Email direct manager only
   const manager = db.users.find(u => u.id === user.managerId);
   if (manager && manager.email) emailNewRequest(manager, user, newReq).catch(console.error);
-
-  // Also email admins
-  const admins = db.users.filter(u => u.role === 'admin' && u.email);
-  for (const admin of admins) emailNewRequest(admin, user, newReq).catch(console.error);
 
   res.json(newReq);
 });
