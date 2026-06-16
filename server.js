@@ -12,7 +12,8 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
+console.log('Looking for public at:', path.join(__dirname, 'public'));
+console.log('Files in __dirname:', require('fs').readdirSync(__dirname).join(', '));app.use(session({
   secret: process.env.SESSION_SECRET || 'timeoff-secret-change-me',
   resave: false,
   saveUninitialized: false,
