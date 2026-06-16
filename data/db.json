@@ -3,7 +3,7 @@
     {
       "id": "duarte.gil",
       "name": "Duarte Gil",
-      "email": "duarte.gil@selenis.com",
+      "email": "esther.ruiz@imgsgps.com",
       "role": "admin",
       "location": "Portugal",
       "managerId": null,
@@ -247,6 +247,18 @@
       "end": "2026-04-05",
       "days": 5,
       "notes": "Pre-approved (March 26th to April 5th)",
+      "status": "approved",
+      "reviewedBy": "duarte.gil",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "userId": "tiago.carneiro",
+      "type": "Annual leave",
+      "start": "2026-06-08",
+      "end": "2026-06-08",
+      "days": 1,
+      "notes": "Pre-approved",
       "status": "approved",
       "reviewedBy": "duarte.gil",
       "createdAt": "2026-01-01T00:00:00.000Z"
