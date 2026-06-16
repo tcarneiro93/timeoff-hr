@@ -81,7 +81,7 @@ function writeDB(data) {
 }
 
 // ── Email ────────────────────────────────────────────────────────────────────
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resend = null;
 
 function fmtDate(str) {
   const d = new Date(str + 'T00:00:00');
