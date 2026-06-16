@@ -100,9 +100,11 @@ async function sendEmail({ to, subject, html }) {
     console.log(`[Email skipped — SMTP not configured]\nTo: ${to}\nSubject: ${subject}`);
     return;
   }
+  // TEST MODE: redirect all emails to override address if set
+  const recipient = process.env.TEST_EMAIL_TO || to;
   try {
-    await transporter.sendMail({ from: process.env.EMAIL_FROM, to, subject, html });
-    console.log(`[Email sent] ${subject} → ${to}`);
+    await transporter.sendMail({ from: process.env.EMAIL_FROM, to: recipient, subject: (process.env.TEST_EMAIL_TO ? '[TEST] ' : '') + subject, html });
+    console.log(`[Email sent] ${subject} → ${recipient}`);
   } catch (err) { console.error('[Email error]', err.message); }
 }
 
