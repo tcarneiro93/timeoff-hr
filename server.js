@@ -1,7 +1,7 @@
 require('dotenv').config({ path: './config.env' });
 const express = require('express');
 const session = require('express-session');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
@@ -81,13 +81,7 @@ function writeDB(data) {
 }
 
 // ── Email ────────────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.office365.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  tls: { ciphers: 'SSLv3' }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 function fmtDate(str) {
   const d = new Date(str + 'T00:00:00');
@@ -96,15 +90,21 @@ function fmtDate(str) {
 function fmtDateRange(s, e) { return s === e ? fmtDate(s) : `${fmtDate(s)} – ${fmtDate(e)}`; }
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.SMTP_USER || process.env.SMTP_USER === 'your-email@yourdomain.com') {
-    console.log(`[Email skipped — SMTP not configured]\nTo: ${to}\nSubject: ${subject}`);
+  if (!process.env.RESEND_API_KEY) {
+    console.log(`[Email skipped — RESEND_API_KEY not set]\nTo: ${to}\nSubject: ${subject}`);
     return;
   }
-  // TEST MODE: redirect all emails to override address if set
   const recipient = process.env.TEST_EMAIL_TO || to;
+  const finalSubject = (process.env.TEST_EMAIL_TO ? '[TEST] ' : '') + subject;
   try {
-    await transporter.sendMail({ from: process.env.EMAIL_FROM, to: recipient, subject: (process.env.TEST_EMAIL_TO ? '[TEST] ' : '') + subject, html });
-    console.log(`[Email sent] ${subject} → ${recipient}`);
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'TimeOff HR <onboarding@resend.dev>',
+      to: recipient,
+      subject: finalSubject,
+      html
+    });
+    if (error) { console.error('[Email error]', error); return; }
+    console.log(`[Email sent] ${finalSubject} → ${recipient}`);
   } catch (err) { console.error('[Email error]', err.message); }
 }
 
