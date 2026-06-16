@@ -539,47 +539,63 @@ function renderCalendar() {
   const lastDay = new Date(calYear, calMonth + 1, 0);
   const startDow = (new Date(calYear, calMonth, 1).getDay() + 6) % 7;
   const today = new Date().toISOString().slice(0, 10);
-  // Calendar only shows approved and pending (rejected already excluded from allRequests)
   const displayReqs = allRequests;
+
+  // Build holiday markers for this month
+  const holidayDates = {};
+  if (typeof getUserHolidays === 'function') {
+    for (const u of allUsers) {
+      const hols = getUserHolidays(u);
+      hols.forEach(function(d) {
+        const parts = d.split('-');
+        if (parseInt(parts[0]) === calYear && parseInt(parts[1]) === calMonth + 1) {
+          if (!holidayDates[d]) holidayDates[d] = new Set();
+          holidayDates[d].add(u.location || '?');
+        }
+      });
+    }
+  }
+
+  function getHolidayName(ds) {
+    if (typeof HOLIDAY_NAMES !== 'undefined' && HOLIDAY_NAMES[ds]) return HOLIDAY_NAMES[ds].split('/')[0].trim();
+    return 'Public holiday';
+  }
+
+  function eventsForDate(ds) { return displayReqs.filter(r => ds >= r.start && ds <= r.end); }
+
   let cells = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
   for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
-  function eventsForDate(ds) { return displayReqs.filter(r => ds >= r.start && ds <= r.end); }
-  // Build holiday set for all visible users this month
-  const visibleUsers = currentUser.role === 'admin'
-    ? allUsers
-    : allUsers.filter(u => u.id === currentUser.id || u.managerId === currentUser.id || allRequests.some(r => r.userId === u.id));
-  const holidayDates = {}; // date -> array of location names
-  for (const u of visibleUsers) {
-    if (typeof getUserHolidays !== 'function') break;
-    const hols = getUserHolidays(u);
-    hols.forEach(d => {
-      const [y,m] = d.split('-').map(Number);
-      if (y === calYear && m === calMonth+1) {
-        if (!holidayDates[d]) holidayDates[d] = new Set();
-        holidayDates[d].add(u.location || '?');
-      }
-    });
-  }
+
   let html = '';
   for (let i = 0; i < cells.length; i += 7) {
     html += '<tr>';
     for (let j = 0; j < 7; j++) {
       const day = cells[i + j];
       if (!day) { html += '<td></td>'; continue; }
-      const ds = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const ds = calYear + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
       const events = eventsForDate(ds);
-      html += `<td class="${ds === today ? 'today ' : ''}in-month">
-        <div class="cal-day-num">${day}</div>
-        ${holidayDates[ds] ? `<span class="cal-event cal-event-holiday" title="${HOLIDAY_NAMES && HOLIDAY_NAMES[ds] ? HOLIDAY_NAMES[ds] : 'Public holiday'} (${[...holidayDates[ds]].join(', ')})">🏛 ${HOLIDAY_NAMES && HOLIDAY_NAMES[ds] ? HOLIDAY_NAMES[ds].split('/')[0].trim() : 'Holiday'}</span>` : ''}
-        ${events.map(r => {
-          const u = getUser(r.userId);
-          const name = u ? u.name.split(' ')[0] : r.userId;
-          const cls = r.status === 'approved' ? 'cal-event-approved' : 'cal-event-pending';
-          return `<span class="cal-event ${cls}" title="${u ? u.name : r.userId}: ${r.type}">${name}</span>`;
-        }).join('')}
-      </td>`;
+      let cellHtml = '<td class="' + (ds === today ? 'today ' : '') + 'in-month">';
+      cellHtml += '<div class="cal-day-num">' + day + '</div>';
+
+      // Holiday marker
+      if (holidayDates[ds]) {
+        const name = getHolidayName(ds);
+        const locs = Array.from(holidayDates[ds]).join(', ');
+        cellHtml += '<span class="cal-event cal-event-holiday" title="' + name + ' (' + locs + ')">&#127963; ' + name + '</span>';
+      }
+
+      // Vacation events
+      events.forEach(function(r) {
+        const u = getUser(r.userId);
+        const name = u ? u.name.split(' ')[0] : r.userId;
+        const cls = r.status === 'approved' ? 'cal-event-approved' : 'cal-event-pending';
+        cellHtml += '<span class="cal-event ' + cls + '" title="' + (u ? u.name : r.userId) + ': ' + r.type + '">' + name + '</span>';
+      });
+
+      cellHtml += '</td>';
+      html += cellHtml;
     }
     html += '</tr>';
   }
