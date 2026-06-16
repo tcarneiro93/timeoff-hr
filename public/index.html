@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TimeOff — Selenis</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<script src="/holidays.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root { --brand: #E8500A; --brand-light: #FDF0EA; --font: system-ui, sans-serif; --radius: 10px; --radius-sm: 6px; --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 8px rgba(0,0,0,0.04); --shadow-md: 0 4px 16px rgba(0,0,0,0.10); }
@@ -107,6 +108,7 @@ nav { flex: 1; padding: 0.75rem 0; }
 .cal-event { display: block; font-size: 10px; font-weight: 500; padding: 2px 5px; border-radius: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-event-approved { background: #D6F0E4; color: #1C6E3A; }
 .cal-event-pending { background: #FEF0D3; color: #9A6B00; }
+.cal-event-holiday { background: #EEE8FA; color: #5B3FB5; font-size: 9px; }
 .cal-legend { display: flex; gap: 1rem; margin-top: 0.75rem; }
 .cal-legend span { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
 .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
@@ -251,6 +253,7 @@ nav { flex: 1; padding: 0.75rem 0; }
           <div class="cal-legend">
             <span><div class="legend-dot" style="background:#D6F0E4;"></div> Approved</span>
             <span><div class="legend-dot" style="background:#FEF0D3;"></div> Pending</span>
+            <span><div class="legend-dot" style="background:#EEE8FA;"></div> Public holiday</span>
           </div>
         </div>
       </div>
@@ -312,10 +315,12 @@ function fmtDate(str) { return new Date(str + 'T00:00:00').toLocaleDateString('e
 function fmtDateRange(s, e) { return s === e ? fmtDate(s) : fmtDate(s) + ' – ' + fmtDate(e); }
 function initials(name) { return name.split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase(); }
 function getUser(id) { return allUsers.find(u => u.id === id); }
-function calcWorkingDays(start, end) {
-  let s = new Date(start), e = new Date(end), count = 0;
-  while (s <= e) { const d = s.getDay(); if (d !== 0 && d !== 6) count++; s.setDate(s.getDate() + 1); }
-  return count;
+function calcWorkingDays(start, end, user) {
+  // Use holiday-aware calculator if user provided, else basic weekday count
+  if (user && typeof calcWorkingDaysForUser === 'function') {
+    return calcWorkingDaysForUser(start, end, user);
+  }
+  return calcWorkingDaysBasic(start, end);
 }
 function badgeLabel(s) {
   if (s === 'approved') return '<i class="ti ti-check"></i> Approved';
@@ -479,15 +484,27 @@ function renderDashboard() {
 function updateDayCount() {
   const s = document.getElementById('req-start').value, e = document.getElementById('req-end').value;
   if (s && e && e >= s) {
-    const d = calcWorkingDays(s, e);
-    document.getElementById('req-days-display').textContent = d + ' working day' + (d !== 1 ? 's' : '');
+    const d = calcWorkingDays(s, e, currentUser);
+    const hols = currentUser ? getUserHolidays(currentUser) : new Set();
+    // count holidays in range to show info
+    let holCount = 0;
+    let cur = new Date(s + 'T00:00:00'), end = new Date(e + 'T00:00:00');
+    while (cur <= end) {
+      const ds = cur.toISOString().slice(0,10);
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6 && hols.has(ds)) holCount++;
+      cur.setDate(cur.getDate()+1);
+    }
+    let txt = d + ' working day' + (d !== 1 ? 's' : '');
+    if (holCount > 0) txt += ' <span style="color:#888;font-size:11px;">(' + holCount + ' public holiday' + (holCount>1?'s':'')+' excluded)</span>';
+    document.getElementById('req-days-display').innerHTML = txt;
   } else { document.getElementById('req-days-display').textContent = '— check dates'; }
 }
 
 async function submitRequest() {
   const s = document.getElementById('req-start').value, e = document.getElementById('req-end').value;
   if (!s || !e || e < s) { showToast('Please set valid start and end dates.', true); return; }
-  const days = calcWorkingDays(s, e);
+  const days = calcWorkingDays(s, e, currentUser);
   const type = document.getElementById('req-type').value;
   const notes = document.getElementById('req-notes').value.trim();
   const btn = document.getElementById('req-btn');
@@ -529,6 +546,22 @@ function renderCalendar() {
   for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
   function eventsForDate(ds) { return displayReqs.filter(r => ds >= r.start && ds <= r.end); }
+  // Build holiday set for all visible users this month
+  const visibleUsers = currentUser.role === 'admin'
+    ? allUsers
+    : allUsers.filter(u => u.id === currentUser.id || u.managerId === currentUser.id || allRequests.some(r => r.userId === u.id));
+  const holidayDates = {}; // date -> array of location names
+  for (const u of visibleUsers) {
+    if (typeof getUserHolidays !== 'function') break;
+    const hols = getUserHolidays(u);
+    hols.forEach(d => {
+      const [y,m] = d.split('-').map(Number);
+      if (y === calYear && m === calMonth+1) {
+        if (!holidayDates[d]) holidayDates[d] = new Set();
+        holidayDates[d].add(u.location || '?');
+      }
+    });
+  }
   let html = '';
   for (let i = 0; i < cells.length; i += 7) {
     html += '<tr>';
@@ -539,6 +572,7 @@ function renderCalendar() {
       const events = eventsForDate(ds);
       html += `<td class="${ds === today ? 'today ' : ''}in-month">
         <div class="cal-day-num">${day}</div>
+        ${holidayDates[ds] ? `<span class="cal-event cal-event-holiday" title="${HOLIDAY_NAMES && HOLIDAY_NAMES[ds] ? HOLIDAY_NAMES[ds] : 'Public holiday'} (${[...holidayDates[ds]].join(', ')})">🏛 ${HOLIDAY_NAMES && HOLIDAY_NAMES[ds] ? HOLIDAY_NAMES[ds].split('/')[0].trim() : 'Holiday'}</span>` : ''}
         ${events.map(r => {
           const u = getUser(r.userId);
           const name = u ? u.name.split(' ')[0] : r.userId;
