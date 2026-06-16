@@ -541,19 +541,16 @@ function renderCalendar() {
   const today = new Date().toISOString().slice(0, 10);
   const displayReqs = allRequests;
 
-  // Build holiday markers for this month
+  // Build holiday markers for this month — only for current user's location
   const holidayDates = {};
   if (typeof getUserHolidays === 'function') {
-    for (const u of allUsers) {
-      const hols = getUserHolidays(u);
-      hols.forEach(function(d) {
-        const parts = d.split('-');
-        if (parseInt(parts[0]) === calYear && parseInt(parts[1]) === calMonth + 1) {
-          if (!holidayDates[d]) holidayDates[d] = new Set();
-          holidayDates[d].add(u.location || '?');
-        }
-      });
-    }
+    const hols = getUserHolidays(currentUser);
+    hols.forEach(function(d) {
+      const parts = d.split('-');
+      if (parseInt(parts[0]) === calYear && parseInt(parts[1]) === calMonth + 1) {
+        holidayDates[d] = true;
+      }
+    });
   }
 
   function getHolidayName(ds) {
@@ -582,8 +579,7 @@ function renderCalendar() {
       // Holiday marker
       if (holidayDates[ds]) {
         const name = getHolidayName(ds);
-        const locs = Array.from(holidayDates[ds]).join(', ');
-        cellHtml += '<span class="cal-event cal-event-holiday" title="' + name + ' (' + locs + ')">&#127963; ' + name + '</span>';
+        cellHtml += '<span class="cal-event cal-event-holiday" title="' + name + '">&#127963; ' + name + '</span>';
       }
 
       // Vacation events
