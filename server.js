@@ -6,14 +6,57 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
+
+// ── Holiday-aware working day calculator ─────────────────────────────────────
+const HOLIDAYS_2026 = {
+  PT: ['2026-01-01','2026-04-03','2026-04-05','2026-04-25','2026-05-01','2026-06-04','2026-06-10','2026-08-15','2026-10-05','2026-11-01','2026-12-01','2026-12-08','2026-12-25'],
+  PT_PORTALEGRE: ['2026-06-13','2026-06-29'],
+  PT_PORTO: ['2026-06-24'],
+  ES: ['2026-01-01','2026-01-06','2026-04-03','2026-05-01','2026-08-15','2026-10-12','2026-11-01','2026-12-06','2026-12-07','2026-12-08','2026-12-25'],
+  ES_MADRID: ['2026-03-19','2026-04-02','2026-05-02','2026-05-15','2026-11-09','2026-12-07'],
+  ES_CATALUNYA: ['2026-04-06','2026-06-24','2026-09-11','2026-09-24','2026-12-26'],
+  IT: ['2026-01-01','2026-01-06','2026-04-05','2026-04-06','2026-04-25','2026-05-01','2026-06-02','2026-08-15','2026-11-01','2026-12-08','2026-12-25','2026-12-26'],
+  IT_FRIULI: ['2026-11-03'],
+  US_NC: ['2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-10-12','2026-11-11','2026-11-26','2026-11-27','2026-12-24','2026-12-25'],
+  JP: ['2026-01-01','2026-01-12','2026-02-11','2026-02-23','2026-03-20','2026-04-29','2026-05-03','2026-05-04','2026-05-05','2026-05-06','2026-07-20','2026-08-11','2026-09-21','2026-09-22','2026-09-23','2026-10-12','2026-11-03','2026-11-23'],
+};
+
+function getHolidayKeys(user) {
+  const loc = (user.location || '').toLowerCase();
+  const state = (user.state || '').toLowerCase();
+  const keys = [];
+  if (loc === 'portugal') { keys.push('PT'); if (state.includes('portalegre')) keys.push('PT_PORTALEGRE'); if (state.includes('porto')) keys.push('PT_PORTO'); }
+  else if (loc === 'spain') { keys.push('ES'); if (state.includes('madrid')) keys.push('ES_MADRID'); if (state.includes('catalu')) keys.push('ES_CATALUNYA'); }
+  else if (loc === 'italy') { keys.push('IT'); if (state.includes('friuli')) keys.push('IT_FRIULI'); }
+  else if (loc === 'us') { keys.push('US_NC'); }
+  else if (loc === 'japan') { keys.push('JP'); }
+  return keys;
+}
+
+function getUserHolidaySet(user) {
+  const set = new Set();
+  getHolidayKeys(user).forEach(k => (HOLIDAYS_2026[k] || []).forEach(d => set.add(d)));
+  return set;
+}
+
+function calcWorkingDaysForUser(start, end, user) {
+  const holidays = getUserHolidaySet(user);
+  let s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00'), count = 0;
+  while (s <= e) {
+    const dow = s.getDay(), ds = s.toISOString().slice(0, 10);
+    if (dow !== 0 && dow !== 6 && !holidays.has(ds)) count++;
+    s.setDate(s.getDate() + 1);
+  }
+  return count;
+}
+
 const app = express();
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-console.log('Looking for public at:', path.join(__dirname, 'public'));
-console.log('Files in __dirname:', require('fs').readdirSync(__dirname).join(', '));app.use(session({
+app.use(session({
   secret: process.env.SESSION_SECRET || 'timeoff-secret-change-me',
   resave: false,
   saveUninitialized: false,
@@ -214,8 +257,12 @@ app.post('/api/requests', requireAuth, async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not found' });
   if (user.role === 'admin') return res.status(403).json({ error: 'Admin accounts cannot submit requests' });
 
-  const { type, start, end, days, notes } = req.body;
-  if (!type || !start || !end || !days) return res.status(400).json({ error: 'Missing fields' });
+  const { type, start, end, notes } = req.body;
+  let { days } = req.body;
+  if (!type || !start || !end) return res.status(400).json({ error: 'Missing fields' });
+  // Always recalculate server-side to prevent manipulation
+  days = calcWorkingDaysForUser(start, end, user);
+  if (days <= 0) return res.status(400).json({ error: 'No working days in selected range (check weekends and public holidays)' });
 
   const myReqs = db.requests.filter(r => r.userId === user.id && r.status === 'approved');
   const usedApproved = myReqs.reduce((s, r) => s + r.days, 0);
@@ -278,8 +325,8 @@ app.patch('/api/requests/:id', requireManagerOrAdmin, async (req, res) => {
 
 // ── Serve frontend ────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
-const indexPath = path.join(__dirname, 'public', 'index.html');
-res.sendFile(indexPath);});
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
