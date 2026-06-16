@@ -1,7 +1,6 @@
 require('dotenv').config({ path: './config.env' });
 const express = require('express');
 const session = require('express-session');
-const FileStore = require('session-file-store')(session);
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
@@ -57,15 +56,18 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
+// Trust Railway's proxy so cookies work correctly over HTTPS
+app.set('trust proxy', 1);
+
 app.use(session({
-  store: new FileStore({ path: '/tmp/sessions', retries: 1, ttl: 28800 }),
   secret: process.env.SESSION_SECRET || 'timeoff-secret-change-me',
   resave: false,
   saveUninitialized: false,
   cookie: {
     maxAge: 8 * 60 * 60 * 1000,
-    secure: false,
-    sameSite: 'lax'
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    httpOnly: true
   }
 }));
 
