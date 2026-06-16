@@ -1,7 +1,7 @@
 require('dotenv').config({ path: './config.env' });
 const express = require('express');
 const session = require('express-session');
-const { Resend } = require('resend');
+const https = require('https');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
@@ -81,7 +81,7 @@ function writeDB(data) {
 }
 
 // ── Email ────────────────────────────────────────────────────────────────────
-let resend = null; // initialized lazily when API key is available
+
 
 function fmtDate(str) {
   const d = new Date(str + 'T00:00:00');
@@ -90,23 +90,44 @@ function fmtDate(str) {
 function fmtDateRange(s, e) { return s === e ? fmtDate(s) : `${fmtDate(s)} – ${fmtDate(e)}`; }
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log(`[Email skipped — RESEND_API_KEY not set]\nTo: ${to}\nSubject: ${subject}`);
+  if (!process.env.BREVO_API_KEY) {
+    console.log(`[Email skipped — BREVO_API_KEY not set]\nTo: ${to}\nSubject: ${subject}`);
     return;
   }
-  if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
   const recipient = process.env.TEST_EMAIL_TO || to;
   const finalSubject = (process.env.TEST_EMAIL_TO ? '[TEST] ' : '') + subject;
-  try {
-    const { error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'TimeOff HR <onboarding@resend.dev>',
-      to: recipient,
-      subject: finalSubject,
-      html
+  const payload = JSON.stringify({
+    sender: { name: 'TimeOff HR', email: process.env.SMTP_USER || 'tiago.carneiro@selenis.com' },
+    to: [{ email: recipient }],
+    subject: finalSubject,
+    htmlContent: html
+  });
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'api.brevo.com',
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`[Email sent] ${finalSubject} → ${recipient}`);
+        } else {
+          console.error('[Email error]', data);
+        }
+        resolve();
+      });
     });
-    if (error) { console.error('[Email error]', JSON.stringify(error)); return; }
-    console.log(`[Email sent] ${finalSubject} → ${recipient}`);
-  } catch (err) { console.error('[Email error]', err.message); }
+    req.on('error', err => { console.error('[Email error]', err.message); resolve(); });
+    req.write(payload);
+    req.end();
+  });
 }
 
 function emailNewRequest(manager, requester, req) {
