@@ -277,8 +277,8 @@ app.patch('/api/requests/:id', requireManagerOrAdmin, async (req, res) => {
 
 // ── Serve frontend ────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+const indexPath = path.join(__dirname, 'public', 'index.html');
+res.sendFile(indexPath);});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
