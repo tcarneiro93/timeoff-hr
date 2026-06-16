@@ -1,6 +1,7 @@
 require('dotenv').config({ path: './config.env' });
 const express = require('express');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const { Resend } = require('resend');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
@@ -60,6 +61,7 @@ app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 
 app.set('trust proxy', 1);
 
 app.use(session({
+  store: new FileStore({ path: '/tmp/sessions', retries: 1, ttl: 28800, logFn: function(){} }),
   secret: process.env.SESSION_SECRET || 'timeoff-secret-change-me',
   resave: false,
   saveUninitialized: false,
