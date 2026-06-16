@@ -55,7 +55,7 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'timeoff-secret-change-me',
   resave: false,
